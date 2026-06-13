@@ -1,0 +1,8 @@
+{
+  "name": "Time Buckets",
+  "short_name": "Time Buckets",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#dbe4f0",
+  "theme_color": "#dbe4f0"
+}
