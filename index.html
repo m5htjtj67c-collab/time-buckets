@@ -34,26 +34,90 @@
 .authStatus{font-size:9.5px;color:rgba(17,24,39,.62);font-weight:750;line-height:1.25;min-height:18px}
 </style>
 
-</head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><button id="accountBtn" class="accountBtn">👤</button></section><section id="authOverlay" class="authOverlay"><button id="closeAuth" class="authClose">×</button><h2>Time Buckets</h2><p id="authText">Log in to sync your buckets across devices.</p><label>Email</label><input id="authEmail" class="authInput" type="email"><label>Password</label><input id="authPassword" class="authInput" type="password"><button id="authLogin" class="authPrimary">Log in</button><button id="authSignup" class="authSecondary">Create account</button><button id="authForgot" class="authLink">Forgot password?</button><button id="authLogout" class="authSecondary" style="display:none">Log out</button><p id="authStatus" class="authStatus"></p></section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="elasticBtn" class="elasticBtn"></button><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="elastic" class="elastic"><div class="elasticTop"><h2>Elastic Mode</h2><input id="total" class="total" value="240m" inputmode="numeric"></div><div id="elasticBar" class="elasticBar"></div><div class="note">Drag dividers to reallocate a fixed total. Extra time in one bucket reduces remaining unfilled buckets.</div></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
-(function(){const KEY='timeBuckets.v35.auth',OLD=['timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];const colors=['#7aa7d9','#e9a86d','#8bc6a9','#b49adf','#e7909a','#83c5d6','#c4cf7a','#d9b27a','#9fb7e8','#d9a7c7','#a7c7a1','#d6c08a','#8ecae6','#cdb4db','#ffb4a2','#b7d7c8','#f2cc8f','#a8dadc','#f4a6b8','#b8c0ff','#95d5b2','#ffd6a5','#caffbf','#fdffb6','#bde0fe','#ffc8dd','#d0bfff','#c9ada7','#a3b18a','#dda15e'];const defs=[{id:'project1',name:'Project 1',elapsed:0,target:60,color:colors[0],notified:false},{id:'project2',name:'Project 2',elapsed:0,target:60,color:colors[1],notified:false},{id:'project3',name:'Project 3',elapsed:0,target:60,color:colors[2],notified:false},{id:'project4',name:'Project 4',elapsed:0,target:30,color:colors[3],notified:false}];let state=load(),active=null,typing=false,openColor=null,dragId=null,dropIndex=null,last=Date.now(),historyOpen=false,elasticOpen=false;const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;let currentUser=null,cloudTimer=null;
-const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';
-const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';
-const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
-let currentUser=null,cloudTimer=null;
+
+<style id="v37-auth-ui">
+.authOverlay{
+  background:#f7f4ef!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+  border:1px solid rgba(17,24,39,.10)!important;
+  box-shadow:0 18px 40px rgba(31,41,55,.20)!important;
+  padding:16px!important;
+}
+.authOverlay.open{display:flex!important}
+.authScreen{height:100%;display:flex;flex-direction:column;gap:7px}
+.authOverlay h2{font-size:18px!important;margin:0 0 2px!important;letter-spacing:-.04em!important;color:#111827!important}
+#authText,.authIntro{font-size:10.5px!important;color:rgba(17,24,39,.64)!important;font-weight:750!important;line-height:1.25!important;margin:0 0 4px!important}
+.authOverlay label{font-size:10px!important;font-weight:900!important;color:rgba(17,24,39,.66)!important}
+.authInput{background:white!important;border:1px solid rgba(17,24,39,.12)!important;height:26px!important}
+.authPrimary{height:27px!important}
+.authSecondary{height:27px!important;background:rgba(17,24,39,.06)!important}
+.authLink{height:24px!important}
+.authStatus{font-size:9.5px!important;color:rgba(17,24,39,.66)!important;min-height:18px!important}
+.authClose{color:rgba(17,24,39,.58)!important}
+</style>
+
+</head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><button id="accountBtn" class="accountBtn">👤</button></section><section id="authOverlay" class="authOverlay">
+  <button id="closeAuth" class="authClose">×</button>
+
+  <div id="loginScreen" class="authScreen">
+    <h2>Log in</h2>
+    <p id="authText">Log in to sync your buckets across devices.</p>
+    <label>Email</label>
+    <input id="authEmail" class="authInput" type="email" autocomplete="email">
+    <label>Password</label>
+    <input id="authPassword" class="authInput" type="password" autocomplete="current-password">
+    <button id="authLogin" class="authPrimary">Log in</button>
+    <button id="showSignup" class="authSecondary">Create account</button>
+    <button id="authForgot" class="authLink">Forgot password?</button>
+    <button id="authLogout" class="authSecondary" style="display:none">Log out</button>
+    <p id="authStatus" class="authStatus"></p>
+  </div>
+
+  <div id="signupScreen" class="authScreen" style="display:none">
+    <h2>Create account</h2>
+    <p class="authIntro">Create an account to sync Time Buckets across devices.</p>
+    <label>Email</label>
+    <input id="signupEmail" class="authInput" type="email" autocomplete="email">
+    <label>Password</label>
+    <input id="signupPassword" class="authInput" type="password" autocomplete="new-password">
+    <label>Confirm password</label>
+    <input id="signupConfirm" class="authInput" type="password" autocomplete="new-password">
+    <button id="authSignup" class="authPrimary">Create account</button>
+    <button id="showLogin" class="authSecondary">Back to log in</button>
+    <p id="signupStatus" class="authStatus"></p>
+  </div>
+</section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="elasticBtn" class="elasticBtn"></button><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="elastic" class="elastic"><div class="elasticTop"><h2>Elastic Mode</h2><input id="total" class="total" value="240m" inputmode="numeric"></div><div id="elasticBar" class="elasticBar"></div><div class="note">Drag dividers to reallocate a fixed total. Extra time in one bucket reduces remaining unfilled buckets.</div></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
+(function(){const KEY='timeBuckets.v37.authui',OLD=['timeBuckets.v35.auth','timeBuckets.v34.sync','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];const colors=['#7aa7d9','#e9a86d','#8bc6a9','#b49adf','#e7909a','#83c5d6','#c4cf7a','#d9b27a','#9fb7e8','#d9a7c7','#a7c7a1','#d6c08a','#8ecae6','#cdb4db','#ffb4a2','#b7d7c8','#f2cc8f','#a8dadc','#f4a6b8','#b8c0ff','#95d5b2','#ffd6a5','#caffbf','#fdffb6','#bde0fe','#ffc8dd','#d0bfff','#c9ada7','#a3b18a','#dda15e'];const defs=[{id:'project1',name:'Project 1',elapsed:0,target:60,color:colors[0],notified:false},{id:'project2',name:'Project 2',elapsed:0,target:60,color:colors[1],notified:false},{id:'project3',name:'Project 3',elapsed:0,target:60,color:colors[2],notified:false},{id:'project4',name:'Project 4',elapsed:0,target:30,color:colors[3],notified:false}];let state=load(),active=null,typing=false,openColor=null,dragId=null,dropIndex=null,last=Date.now(),historyOpen=false,elasticOpen=false;const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;let currentUser=null,cloudTimer=null;
 function today(){return new Date().toISOString().slice(0,10)}function clone(x){return JSON.parse(JSON.stringify(x))}function uid(){return'b_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8)}function load(){try{let raw=localStorage.getItem(KEY);if(!raw){for(let k of OLD){raw=localStorage.getItem(k);if(raw)break}}let s=raw?JSON.parse(raw):{date:today(),buckets:clone(defs),history:[],totalTarget:240};s.totalTarget=Number(s.totalTarget)||240;if(s.date!==today()){saveDay(s);s.date=today();s.buckets.forEach(b=>{b.elapsed=0;b.notified=false})}return s}catch(e){return{date:today(),buckets:clone(defs),history:[],totalTarget:240}}}function save(){localStorage.setItem(KEY,JSON.stringify(state));scheduleCloudSave()}function saveDay(s){s.history=s.history||[];let d={date:s.date,buckets:clone(s.buckets)},i=s.history.findIndex(x=>x.date===s.date);if(i>=0)s.history[i]=d;else s.history.push(d)}function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}function parseN(v,f){let n=parseInt(String(v).replace(/[^0-9]/g,''),10);return isNaN(n)?f:Math.max(1,Math.min(9999,n))}function pad(n){return n<10?'0'+n:''+n}function fmt(sec){sec=Math.max(0,Math.floor(sec));let h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;return h?h+':'+pad(m)+':'+pad(s):pad(m)+':'+pad(s)}function extra(b){let e=Math.max(0,b.elapsed-b.target*60);return e>0?'Full +'+fmt(e):'Full'}function rgb(hex,a){let n=parseInt(hex.replace('#',''),16);return`rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`}function chime(){try{let C=window.AudioContext||window.webkitAudioContext;if(!C)return;let c=new C(),now=c.currentTime;function t(f,s,d,g){let o=c.createOscillator(),gn=c.createGain();o.type='sine';o.frequency.setValueAtTime(f,now+s);gn.gain.setValueAtTime(.0001,now+s);gn.gain.exponentialRampToValueAtTime(g,now+s+.05);gn.gain.exponentialRampToValueAtTime(.0001,now+s+d);o.connect(gn);gn.connect(c.destination);o.start(now+s);o.stop(now+s+d+.05)}t(523,0,1.1,.045);t(659,.18,1,.035);t(784,.38,1.1,.03);setTimeout(()=>c.close(),2000)}catch(e){}}
 
 
 
+
+function showLoginScreen(){
+  let l=document.getElementById('loginScreen'),s=document.getElementById('signupScreen');
+  if(l)l.style.display='flex';
+  if(s)s.style.display='none';
+}
+function showSignupScreen(){
+  let l=document.getElementById('loginScreen'),s=document.getElementById('signupScreen');
+  if(l)l.style.display='none';
+  if(s)s.style.display='flex';
+  let email=document.getElementById('authEmail'),signupEmail=document.getElementById('signupEmail');
+  if(email&&signupEmail)signupEmail.value=email.value||'';
+}
+function setSignupStatus(t){let e=document.getElementById('signupStatus');if(e)e.textContent=t}
+
 function setAuthStatus(t){let e=document.getElementById('authStatus');if(e)e.textContent=t}
 function setAccountUI(){let b=document.getElementById('accountBtn'),out=document.getElementById('authLogout'),txt=document.getElementById('authText');if(!b)return;if(currentUser){let em=currentUser.email||'';b.textContent=(em[0]||'U').toUpperCase();b.classList.add('signedIn');b.title='Signed in as '+em;if(out)out.style.display='block';if(txt)txt.textContent='Synced as '+em}else{b.textContent='👤';b.classList.remove('signedIn');b.title='Account';if(out)out.style.display='none';if(txt)txt.textContent='Log in to sync your buckets across devices.'}}
-function openAuth(){setAccountUI();document.getElementById('authOverlay').classList.add('open')}
+function openAuth(){showLoginScreen();setAccountUI();document.getElementById('authOverlay').classList.add('open')}
 function closeAuth(){document.getElementById('authOverlay').classList.remove('open')}
 function scheduleCloudSave(){if(!currentUser||!supabaseClient)return;clearTimeout(cloudTimer);cloudTimer=setTimeout(pushCloud,800)}
 async function pushCloud(){if(!currentUser||!supabaseClient)return;try{let rows=state.buckets.map((b,i)=>({id:b.id,user_id:currentUser.id,name:b.name,color:b.color,target_seconds:Math.round((Number(b.target)||0)*60),elapsed_seconds:Number(b.elapsed)||0,sort_order:i,notified:!!b.notified,updated_at:new Date().toISOString()}));let r=await supabaseClient.from('buckets').upsert(rows,{onConflict:'id'});if(r.error)throw r.error;await supabaseClient.from('timer_state').upsert({user_id:currentUser.id,active_bucket_id:active,active_started_at:active?new Date(last).toISOString():null,updated_at:new Date().toISOString()},{onConflict:'user_id'});await supabaseClient.from('day_logs').upsert({user_id:currentUser.id,date:state.date,bucket_snapshot:state.buckets,updated_at:new Date().toISOString()},{onConflict:'user_id,date'});setAuthStatus('Synced.')}catch(e){console.error(e);setAuthStatus(e.message||'Sync error.')}}
 async function pullCloud(){if(!currentUser||!supabaseClient)return;try{setAuthStatus('Loading...');let r=await supabaseClient.from('buckets').select('*').order('sort_order',{ascending:true});if(r.error)throw r.error;if(r.data&&r.data.length){state.buckets=r.data.map(x=>({id:x.id,name:x.name,color:x.color,target:Math.round((x.target_seconds||3600)/60),elapsed:Number(x.elapsed_seconds)||0,notified:!!x.notified}))}else await pushCloud();let l=await supabaseClient.from('day_logs').select('*').order('date',{ascending:true});if(l.error)throw l.error;if(l.data)state.history=l.data.filter(x=>x.date!==state.date).map(x=>({date:x.date,buckets:x.bucket_snapshot||[]}));localStorage.setItem(KEY,JSON.stringify(state));setAuthStatus('Synced.');render()}catch(e){console.error(e);setAuthStatus(e.message||'Cloud load error.')}}
 async function initAuth(){if(!supabaseClient)return;let s=await supabaseClient.auth.getSession();currentUser=s.data&&s.data.session?s.data.session.user:null;setAccountUI();if(currentUser)await pullCloud();supabaseClient.auth.onAuthStateChange(async(e,session)=>{currentUser=session?session.user:null;setAccountUI();if(currentUser)await pullCloud()})}
 async function doLogin(){let email=(document.getElementById('authEmail').value||'').trim(),password=document.getElementById('authPassword').value||'';if(!email||!password)return setAuthStatus('Enter email and password.');setAuthStatus('Logging in...');let r=await supabaseClient.auth.signInWithPassword({email,password});if(r.error)return setAuthStatus(r.error.message);currentUser=r.data.user;setAccountUI();await pullCloud();closeAuth()}
-async function doSignup(){let email=(document.getElementById('authEmail').value||'').trim(),password=document.getElementById('authPassword').value||'';if(!email||!password)return setAuthStatus('Enter email and password.');if(password.length<6)return setAuthStatus('Password must be at least 6 characters.');setAuthStatus('Creating account...');let r=await supabaseClient.auth.signUp({email,password,options:{emailRedirectTo:window.location.href}});if(r.error)return setAuthStatus(r.error.message);if(!r.data.session)return setAuthStatus('Check email to confirm account.');currentUser=r.data.user;setAccountUI();await pushCloud();closeAuth()}
+async function doSignup(){let email=(document.getElementById('signupEmail').value||'').trim(),password=document.getElementById('signupPassword').value||'',confirm=document.getElementById('signupConfirm').value||'';if(!email||!password||!confirm)return setSignupStatus('Enter email, password, and confirmation.');if(password!==confirm)return setSignupStatus('Passwords do not match.');if(password.length<6)return setSignupStatus('Password must be at least 6 characters.');setSignupStatus('Creating account...');let r=await supabaseClient.auth.signUp({email,password,options:{emailRedirectTo:window.location.href}});if(r.error)return setSignupStatus(r.error.message);if(!r.data.session)return setSignupStatus('Check email to confirm account.');currentUser=r.data.user;setAccountUI();await pushCloud();closeAuth()}
 async function doForgot(){let email=(document.getElementById('authEmail').value||'').trim();if(!email)return setAuthStatus('Enter your email first.');setAuthStatus('Sending reset email...');let r=await supabaseClient.auth.resetPasswordForEmail(email,{redirectTo:window.location.href});if(r.error)return setAuthStatus(r.error.message);setAuthStatus('Check email for reset link.')}
 async function doLogout(){await supabaseClient.auth.signOut();currentUser=null;setAccountUI();setAuthStatus('Logged out.');closeAuth()}
 function render(){if(typing)return;document.querySelectorAll('.dropIndicator').forEach(e=>e.remove());let list=document.getElementById('list');list.innerHTML='';state.buckets.forEach(b=>{let pct=Math.min(b.elapsed/(b.target*60),1)*100,run=active===b.id,full=b.elapsed>=b.target*60,sw=colors.map(c=>`<span class="swatch" data-c="${c}" style="background:${c}"></span>`).join(''),row=document.createElement('section');row.className='row'+(run?' running':'')+(full?' full':'');row.draggable=true;row.dataset.id=b.id;row.style.setProperty('--bar-color',b.color);row.style.setProperty('--bar-bg',rgb(b.color,.24));row.innerHTML=`<div class="handle">⋮</div><div class="colorWrap"><div class="colorDot" style="background:${b.color}"></div><div class="popup ${openColor===b.id?'open':''}"><div class="popTop"><span>Color</span><span class="close">×</span></div><div class="swatches">${sw}</div></div></div><input class="name" value="${esc(b.name)}"><div class="bar"><div class="fill" style="width:${pct}%"></div><div class="text">${full?extra(b):(run?fmt(b.elapsed):'')}</div></div><input class="target" value="${b.target}m" inputmode="numeric"><button class="btn reset">↺</button><button class="btn plus">+5</button>`;list.appendChild(row);row.ondragstart=e=>{dragId=b.id;e.dataTransfer.setData('text/plain',b.id);row.classList.add('dragging')};row.ondragend=()=>{dragId=null;row.classList.remove('dragging');document.querySelectorAll('.dropIndicator').forEach(e=>e.remove());trash.classList.remove('over')};});wire();if(historyOpen)drawChart()}
@@ -69,6 +133,9 @@ document.getElementById('authLogin').onclick=e=>{e.stopPropagation();doLogin()};
 document.getElementById('authSignup').onclick=e=>{e.stopPropagation();doSignup()};
 document.getElementById('authForgot').onclick=e=>{e.stopPropagation();doForgot()};
 document.getElementById('authLogout').onclick=e=>{e.stopPropagation();doLogout()};
+
+if(document.getElementById('showSignup'))document.getElementById('showSignup').onclick=e=>{e.stopPropagation();showSignupScreen()};
+if(document.getElementById('showLogin'))document.getElementById('showLogin').onclick=e=>{e.stopPropagation();showLoginScreen()};
 initAuth();
 render();setInterval(tick,1000);
 })();</script></body></html>
