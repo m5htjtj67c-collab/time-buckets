@@ -49,8 +49,8 @@
 </section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
 
 (function(){
-const KEY='timeBuckets.v39.frictionless.sync';
-const OLD=['timeBuckets.v38.iphone.login.fixed','timeBuckets.v37.collapsed.login','timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
+const KEY='timeBuckets.v40.local.first.sync';
+const OLD=['timeBuckets.v39.frictionless.sync','timeBuckets.v38.iphone.login.fixed','timeBuckets.v37.collapsed.login','timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
 const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';
 const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
@@ -62,7 +62,7 @@ const defs=[
   {name:'Project 4',elapsed:0,target:30,color:colors[3],notified:false}
 ];
 let state=load(),active=null,typing=false,openColor=null,dragId=null,dropIndex=null,last=Date.now(),historyOpen=false;
-let currentUser=null,cloudTimer=null,realtimeChannel=null,lastPull=0,applyingRemote=false,activeStartedAt=null,accountPanelOpen=false,localBusyUntil=0,remoteQueued=false,realtimeTimer=null,lastStatus='';
+let currentUser=null,cloudTimer=null,realtimeChannel=null,lastPull=0,applyingRemote=false,activeStartedAt=null,accountPanelOpen=false,localBusyUntil=0,remoteQueued=false,realtimeTimer=null,lastStatus='',lastLocalChangeAt=0,lastCloudWriteAt=0;
 
 function uuid(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{let r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16)})}
 function isUuid(x){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(x||''))}
@@ -96,12 +96,22 @@ function chime(){try{let C=window.AudioContext||window.webkitAudioContext;if(!C)
 function setStatus(t){
   if(t==='Loading...'&&currentUser)return;
   if(t==='Synced'&&currentUser)t='Synced: '+(currentUser.email||'user');
+  if(Date.now()<localBusyUntil && (t.startsWith('Synced')||t==='Loading...'))return;
   if(t===lastStatus)return;
   lastStatus=t;
   let e=document.getElementById('syncStatus');if(e)e.textContent=t;
 }
-function markLocalBusy(ms){localBusyUntil=Date.now()+(ms||2500)}
-function canApplyRemote(){return !typing && Date.now()>localBusyUntil}
+function markLocalBusy(ms){
+  lastLocalChangeAt=Date.now();
+  localBusyUntil=Date.now()+(ms||12000);
+}
+function canApplyRemote(){
+  if(typing)return false;
+  if(active)return false; // never let remote pulls fight an active timer
+  if(Date.now()<localBusyUntil)return false;
+  if(Date.now()-lastLocalChangeAt<30000)return false;
+  return true;
+}
 function queueRemotePull(){
   if(!currentUser)return;
   if(!canApplyRemote()){remoteQueued=true;setTimeout(()=>{if(remoteQueued&&canApplyRemote()){remoteQueued=false;pullCloud(true)}},2200);return}
@@ -153,7 +163,7 @@ function bucketRows(){
 function timerRow(){
   return {user_id:currentUser.id,active_bucket_id:active?active:null,active_started_at:active?activeStartedAt:null,updated_at:new Date().toISOString()};
 }
-function scheduleCloudSave(){if(!currentUser||!supabaseClient)return;clearTimeout(cloudTimer);cloudTimer=setTimeout(pushCloud,1200)}
+function scheduleCloudSave(){if(!currentUser||!supabaseClient)return;clearTimeout(cloudTimer);cloudTimer=setTimeout(pushCloud,900)}
 async function pushCloud(){
   if(!currentUser||!supabaseClient)return;
   try{
@@ -161,16 +171,15 @@ async function pushCloud(){
     if(rows.length){let r=await supabaseClient.from('buckets').upsert(rows,{onConflict:'id'});if(r.error)throw r.error}
     let ts=await supabaseClient.from('timer_state').upsert(timerRow(),{onConflict:'user_id'});if(ts.error)throw ts.error;
     let dl=await supabaseClient.from('day_logs').upsert({user_id:currentUser.id,date:state.date,bucket_snapshot:state.buckets,updated_at:new Date().toISOString()},{onConflict:'user_id,date'});if(dl.error)throw dl.error;
-    setStatus('Synced');
+    lastCloudWriteAt=Date.now();setStatus('Synced');
   }catch(e){console.error(e);setStatus('Save error: '+(e.message||'cloud'))}
 }
 async function pullCloud(force){
   if(!currentUser||!supabaseClient)return;
-  if(!canApplyRemote()){
-    remoteQueued=true;
-    return;
-  }
-  if(!force&&Date.now()-lastPull<12000)return;lastPull=Date.now();
+  // Initial forced pulls after login are allowed only if there has not been a recent local edit.
+  if(!force && !canApplyRemote())return;
+  if(force && Date.now()-lastLocalChangeAt<30000)return;
+  if(!force&&Date.now()-lastPull<60000)return;lastPull=Date.now();
   try{
     let br=await supabaseClient.from('buckets').select('*').order('sort_order',{ascending:true});
     if(br.error)throw br.error;
@@ -203,13 +212,10 @@ function syncActiveElapsedFromStart(){
   if(!isNaN(started)){let base=Number(b.elapsed)||0;let nowElapsed=base+(Date.now()-started)/1000;if(nowElapsed>b.elapsed)b.elapsed=nowElapsed}
 }
 async function startRealtime(){
-  if(!supabaseClient||!currentUser)return;
-  try{if(realtimeChannel)await supabaseClient.removeChannel(realtimeChannel)}catch(e){}
-  realtimeChannel=supabaseClient.channel('time-buckets-'+currentUser.id)
-    .on('postgres_changes',{event:'*',schema:'public',table:'buckets'},()=>queueRemotePull())
-    .on('postgres_changes',{event:'*',schema:'public',table:'timer_state'},()=>queueRemotePull())
-    .on('postgres_changes',{event:'*',schema:'public',table:'day_logs'},()=>queueRemotePull())
-    .subscribe();
+  // v40: local-first mode. Realtime pulls are intentionally disabled because
+  // they can interrupt editing/clicking. Sync still happens by pushing local
+  // changes immediately and doing quiet background pulls when idle.
+  return;
 }
 async function initSync(){
   if(!supabaseClient){setStatus('Sync unavailable');return}
@@ -307,7 +313,7 @@ async function initSync(){
 
   let pass=document.getElementById('passwordInput');
   if(pass)pass.addEventListener('keydown',e=>{if(e.key==='Enter')doSignin(e)});
-  setInterval(()=>{if(currentUser)pullCloud(false)},20000);
+  setInterval(()=>{if(currentUser)pullCloud(false)},60000);
 }
 
 function render(){
@@ -332,27 +338,27 @@ function wire(){
     row.querySelector('.popup').onclick=e=>e.stopPropagation();
     row.querySelector('.close').onclick=e=>{e.stopPropagation();openColor=null;render()};
     row.querySelectorAll('.swatch').forEach(s=>s.onclick=e=>{b.color=s.dataset.c;save();render()});
-    let name=row.querySelector('.name');name.onfocus=()=>{typing=true;markLocalBusy(6000)};name.oninput=()=>{markLocalBusy(6000);b.name=name.value||'Untitled';save()};name.onblur=()=>{typing=false;markLocalBusy(2500);save();render();setTimeout(()=>{if(remoteQueued&&canApplyRemote()){remoteQueued=false;pullCloud(true)}},2600)};
-    let target=row.querySelector('.target');target.onfocus=()=>{typing=true;markLocalBusy(6000);target.value=String(b.target);target.select()};target.onblur=()=>{markLocalBusy(2500);b.target=parseN(target.value,b.target);b.notified=b.elapsed>=b.target*60;typing=false;save();render();setTimeout(()=>{if(remoteQueued&&canApplyRemote()){remoteQueued=false;pullCloud(true)}},2600)};target.onkeydown=e=>{if(e.key==='Enter')target.blur()};
+    let name=row.querySelector('.name');name.onfocus=()=>{typing=true;markLocalBusy(12000)};name.oninput=()=>{markLocalBusy(12000);b.name=name.value||'Untitled';save()};name.onblur=()=>{typing=false;markLocalBusy(12000);save();render()};
+    let target=row.querySelector('.target');target.onfocus=()=>{typing=true;markLocalBusy(12000);target.value=String(b.target);target.select()};target.onblur=()=>{markLocalBusy(12000);b.target=parseN(target.value,b.target);b.notified=b.elapsed>=b.target*60;typing=false;save();render()};target.onkeydown=e=>{if(e.key==='Enter')target.blur()};
     row.querySelector('.bar').onclick=()=>{
-      markLocalBusy(3500);
+      markLocalBusy(8000);
       let id=b.cloudId||b.id;
       if(active===id){active=null;activeStartedAt=null;last=Date.now();}
       else{active=id;activeStartedAt=new Date().toISOString();last=Date.now();}
       saveLocal();render();scheduleCloudSave();
     };
-    row.querySelector('.reset').onclick=()=>{markLocalBusy(3500);b.elapsed=0;b.notified=false;if(active===(b.cloudId||b.id)){active=null;activeStartedAt=null}save();render()};
-    row.querySelector('.plus').onclick=()=>{markLocalBusy(3500);let before=b.elapsed,t=b.target*60;if(before<t&&before+300>=t){b.elapsed=t;if(!b.notified){b.notified=true;chime()}}else{b.elapsed+=300;if(b.elapsed>=t&&!b.notified){b.notified=true;chime()}}if(active===(b.cloudId||b.id)&&b.notified){active=null;activeStartedAt=null}save();render()};
+    row.querySelector('.reset').onclick=()=>{markLocalBusy(8000);b.elapsed=0;b.notified=false;if(active===(b.cloudId||b.id)){active=null;activeStartedAt=null}save();render()};
+    row.querySelector('.plus').onclick=()=>{markLocalBusy(8000);let before=b.elapsed,t=b.target*60;if(before<t&&before+300>=t){b.elapsed=t;if(!b.notified){b.notified=true;chime()}}else{b.elapsed+=300;if(b.elapsed>=t&&!b.notified){b.notified=true;chime()}}if(active===(b.cloudId||b.id)&&b.notified){active=null;activeStartedAt=null}save();render()};
   });
 }
 function indexFromY(y){let rows=[...document.querySelectorAll('.row')];for(let i=0;i<rows.length;i++){let r=rows[i].getBoundingClientRect();if(y<r.top+r.height/2)return i}return rows.length}
 function showDrop(i){document.querySelectorAll('.dropIndicator').forEach(e=>e.remove());let ind=document.createElement('div');ind.className='dropIndicator';let rows=[...document.querySelectorAll('.row')],list=document.getElementById('list');if(i>=rows.length)list.appendChild(ind);else list.insertBefore(ind,rows[i])}
 let list=document.getElementById('list'),trash=document.getElementById('trash');
 list.ondragover=e=>{if(!dragId)return;e.preventDefault();dropIndex=indexFromY(e.clientY);showDrop(dropIndex)};
-list.ondrop=e=>{e.preventDefault();markLocalBusy(3500);let from=state.buckets.findIndex(x=>x.id===dragId);if(from<0)return;let m=state.buckets.splice(from,1)[0];if(dropIndex>from)dropIndex--;state.buckets.splice(Math.max(0,dropIndex),0,m);save();render()};
+list.ondrop=e=>{e.preventDefault();markLocalBusy(8000);let from=state.buckets.findIndex(x=>x.id===dragId);if(from<0)return;let m=state.buckets.splice(from,1)[0];if(dropIndex>from)dropIndex--;state.buckets.splice(Math.max(0,dropIndex),0,m);save();render()};
 trash.ondragover=e=>{e.preventDefault();trash.classList.add('over')};
 trash.ondragleave=()=>trash.classList.remove('over');
-trash.ondrop=e=>{e.preventDefault();markLocalBusy(3500);let b=state.buckets.find(x=>x.id===dragId);state.buckets=state.buckets.filter(x=>x.id!==dragId);if(active&&b&&active===(b.cloudId||b.id)){active=null;activeStartedAt=null};if(currentUser&&b&&supabaseClient){supabaseClient.from('buckets').delete().eq('id',b.cloudId||b.id)}dragId=null;save();render()};
+trash.ondrop=e=>{e.preventDefault();markLocalBusy(8000);let b=state.buckets.find(x=>x.id===dragId);state.buckets=state.buckets.filter(x=>x.id!==dragId);if(active&&b&&active===(b.cloudId||b.id)){active=null;activeStartedAt=null};if(currentUser&&b&&supabaseClient){supabaseClient.from('buckets').delete().eq('id',b.cloudId||b.id)}dragId=null;save();render()};
 
 function tick(){
   let now=Date.now(),d=(now-last)/1000;last=now;
@@ -362,7 +368,7 @@ function tick(){
   b.elapsed+=d;
   if(b.elapsed>=b.target*60&&!b.notified){b.notified=true;chime()}
   saveLocal();render();
-  if(currentUser && active && Math.floor(Date.now()/1000)%15===0)scheduleCloudSave();
+  if(currentUser && active && Date.now()-lastCloudWriteAt>20000)scheduleCloudSave();
 }
 function addDays(ds,n){let d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
 function days(){let arr=(state.history||[]).concat([{date:state.date,buckets:state.buckets}]),map={};arr.forEach(d=>map[d.date]=d);let keys=Object.keys(map).sort();if(!keys.length)return[];let out=[],cur=keys[0],guard=0;while(cur<=state.date&&guard++<31){out.push(map[cur]||{date:cur,buckets:[]});cur=addDays(cur,1)}return out.slice(-14)}
@@ -378,7 +384,7 @@ function drawChart(){
   ctx.textAlign='start';
 }
 document.onclick=()=>{if(openColor){openColor=null;render()}};
-document.getElementById('add').onclick=e=>{e.stopPropagation();markLocalBusy(3500);let i=state.buckets.length;state.buckets.push({id:uuid(),cloudId:null,name:'Project '+(i+1),elapsed:0,target:60,color:colors[i%colors.length],notified:false});state.buckets[state.buckets.length-1].cloudId=state.buckets[state.buckets.length-1].id;save();render()};
+document.getElementById('add').onclick=e=>{e.stopPropagation();markLocalBusy(8000);let i=state.buckets.length;state.buckets.push({id:uuid(),cloudId:null,name:'Project '+(i+1),elapsed:0,target:60,color:colors[i%colors.length],notified:false});state.buckets[state.buckets.length-1].cloudId=state.buckets[state.buckets.length-1].id;save();render()};
 document.getElementById('history').onclick=e=>{e.stopPropagation();historyOpen=!historyOpen;document.getElementById('panel').className='panel'+(historyOpen?' open':'');saveDay(state);save();if(historyOpen)drawChart()};
 
 
