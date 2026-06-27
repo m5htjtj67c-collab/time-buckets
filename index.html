@@ -16,23 +16,32 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-<style id="v35-sync-css">
-.syncBox{display:grid;grid-template-columns:1fr 96px 48px 36px;gap:4px;align-items:center;padding:0 5px 5px}
+
+<style id="v36-sync-css">
+.syncBox{display:grid;grid-template-columns:1fr 58px 58px 24px 28px 36px;gap:3px;align-items:center;padding:0 5px 5px}
 .syncBox.signedIn{grid-template-columns:1fr 36px}
 #syncStatus{font-size:9px;font-weight:850;color:rgba(17,24,39,.58);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.emailInput{height:20px;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.34);border-radius:7px;padding:2px 5px;font-size:9px;font-weight:750;outline:none;min-width:0}
-.syncBtn{height:20px;border:0;border-radius:7px;background:rgba(255,255,255,.28);color:rgba(17,24,39,.72);font-size:8px;font-weight:900;cursor:pointer}
+.emailInput,.passwordInput{height:20px;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.34);border-radius:7px;padding:2px 5px;font-size:9px;font-weight:750;outline:none;min-width:0}
+.syncBtn{height:20px;border:0;border-radius:7px;background:rgba(255,255,255,.28);color:rgba(17,24,39,.72);font-size:8px;font-weight:900;cursor:pointer;padding:0 3px}
 .syncBtn:hover{background:rgba(255,255,255,.42)}
 </style>
 
-</head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><div></div></section><section id="syncBox" class="syncBox"><span id="syncStatus">Local only</span><input id="emailInput" class="emailInput" type="email" placeholder="email"><button id="loginBtn" class="syncBtn">Sign in</button><button id="logoutBtn" class="syncBtn" style="display:none">Out</button></section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
+</head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><div></div></section><section id="syncBox" class="syncBox">
+  <span id="syncStatus">Local only</span>
+  <input id="emailInput" class="emailInput" type="email" placeholder="email">
+  <input id="passwordInput" class="passwordInput" type="password" placeholder="password">
+  <button id="signinBtn" class="syncBtn">In</button>
+  <button id="signupBtn" class="syncBtn">New</button>
+  <button id="resetPassBtn" class="syncBtn">Reset</button>
+  <button id="logoutBtn" class="syncBtn" style="display:none">Out</button>
+</section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
 
 (function(){
-const KEY='timeBuckets.v35.sync';
-const OLD=['timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
+const KEY='timeBuckets.v36.password.sync';
+const OLD=['timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
 const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';
-const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
+const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
 const colors=['#7aa7d9','#e9a86d','#8bc6a9','#b49adf','#e7909a','#83c5d6','#c4cf7a','#d9b27a','#9fb7e8','#d9a7c7','#a7c7a1','#d6c08a','#8ecae6','#cdb4db','#ffb4a2','#b7d7c8','#f2cc8f','#a8dadc','#f4a6b8','#b8c0ff','#95d5b2','#ffd6a5','#caffbf','#fdffb6','#bde0fe','#ffc8dd','#d0bfff','#c9ada7','#a3b18a','#dda15e'];
 const defs=[
   {name:'Project 1',elapsed:0,target:60,color:colors[0],notified:false},
@@ -74,10 +83,33 @@ function rgb(hex,a){let h=String(hex||'#7aa7d9').replace('#','');if(h.length===3
 function chime(){try{let C=window.AudioContext||window.webkitAudioContext;if(!C)return;let c=new C(),now=c.currentTime;function t(f,s,d,g){let o=c.createOscillator(),gn=c.createGain();o.type='sine';o.frequency.setValueAtTime(f,now+s);gn.gain.setValueAtTime(.0001,now+s);gn.gain.exponentialRampToValueAtTime(g,now+s+.05);gn.gain.exponentialRampToValueAtTime(.0001,now+s+d);o.connect(gn);gn.connect(c.destination);o.start(now+s);o.stop(now+s+d+.05)}t(523,0,1.1,.045);t(659,.18,1,.035);t(784,.38,1.1,.03);setTimeout(()=>c.close(),2000)}catch(e){}}
 function setStatus(t){let e=document.getElementById('syncStatus');if(e)e.textContent=t}
 function updateSyncUI(){
-  let box=document.getElementById('syncBox'),email=document.getElementById('emailInput'),login=document.getElementById('loginBtn'),logout=document.getElementById('logoutBtn');
+  let box=document.getElementById('syncBox'),
+      email=document.getElementById('emailInput'),
+      pass=document.getElementById('passwordInput'),
+      signin=document.getElementById('signinBtn'),
+      signup=document.getElementById('signupBtn'),
+      reset=document.getElementById('resetPassBtn'),
+      logout=document.getElementById('logoutBtn');
   if(!box)return;
-  if(currentUser){box.classList.add('signedIn');email.style.display='none';login.style.display='none';logout.style.display='block';setStatus('Synced: '+(currentUser.email||'user'))}
-  else{box.classList.remove('signedIn');email.style.display='block';login.style.display='block';logout.style.display='none';setStatus('Local only')}
+  if(currentUser){
+    box.classList.add('signedIn');
+    if(email)email.style.display='none';
+    if(pass)pass.style.display='none';
+    if(signin)signin.style.display='none';
+    if(signup)signup.style.display='none';
+    if(reset)reset.style.display='none';
+    if(logout)logout.style.display='block';
+    setStatus('Synced: '+(currentUser.email||'user'));
+  }else{
+    box.classList.remove('signedIn');
+    if(email)email.style.display='block';
+    if(pass)pass.style.display='block';
+    if(signin)signin.style.display='block';
+    if(signup)signup.style.display='block';
+    if(reset)reset.style.display='block';
+    if(logout)logout.style.display='none';
+    setStatus('Local only');
+  }
 }
 function bucketRows(){
   return state.buckets.map((b,i)=>({
@@ -147,8 +179,20 @@ async function initSync(){
   if(!supabaseClient){setStatus('Sync unavailable');return}
   let sess=await supabaseClient.auth.getSession();currentUser=sess.data&&sess.data.session?sess.data.session.user:null;updateSyncUI();
   if(currentUser){await pullCloud(true);await startRealtime()}
-  supabaseClient.auth.onAuthStateChange(async(evt,session)=>{currentUser=session?session.user:null;updateSyncUI();if(currentUser){await pullCloud(true);await startRealtime()}});
-  let login=document.getElementById('loginBtn'),logout=document.getElementById('logoutBtn');
+  supabaseClient.auth.onAuthStateChange(async(evt,session)=>{
+    currentUser=session?session.user:null;
+    updateSyncUI();
+    if(evt==='PASSWORD_RECOVERY'){
+      let p=prompt('Enter a new password for Time Buckets (6+ characters):');
+      if(p&&p.length>=6){
+        let out=await supabaseClient.auth.updateUser({password:p});
+        if(out.error)setStatus('Password update error: '+out.error.message);
+        else setStatus('Password updated');
+      }
+    }
+    if(currentUser){await pullCloud(true);await startRealtime()}
+  });
+  let login=null,logout=document.getElementById('logoutBtn');
   if(login)login.onclick=async e=>{e.stopPropagation();let email=(document.getElementById('emailInput').value||'').trim();if(!email){setStatus('Enter email');return}setStatus('Sending link...');let out=await supabaseClient.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.origin+window.location.pathname}});if(out.error){console.error(out.error);setStatus('Login error: '+out.error.message)}else setStatus('Check email')};
   if(logout)logout.onclick=async e=>{e.stopPropagation();if(supabaseClient)await supabaseClient.auth.signOut();currentUser=null;active=null;activeStartedAt=null;updateSyncUI();render()};
   setInterval(()=>{if(currentUser)pullCloud(false)},5000);
