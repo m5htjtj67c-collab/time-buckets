@@ -32,19 +32,26 @@
 </style>
 
 
-</head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><button id="accountToggle" class="accountToggle" title="Sync account">☁︎</button></section><section id="syncBox" class="syncBox collapsed">
+
+<style id="v38-ios-login-fix-css">
+.syncBox{max-height:64px!important;touch-action:manipulation}
+.syncBox.collapsed{max-height:0!important}
+.syncBtn{touch-action:manipulation;-webkit-user-select:none;user-select:none}
+.emailInput,.passwordInput{font-size:16px!important;transform:scale(.62);transform-origin:left center;width:160%!important}
+</style>
+</head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><button id="accountToggle" class="accountToggle" title="Sync account">☁︎</button></section><form id="syncBox" class="syncBox collapsed" autocomplete="on">
   <span id="syncStatus">Local only</span>
-  <input id="emailInput" class="emailInput" type="email" placeholder="email">
-  <input id="passwordInput" class="passwordInput" type="password" placeholder="password">
-  <button id="signinBtn" class="syncBtn">In</button>
-  <button id="signupBtn" class="syncBtn">New</button>
-  <button id="resetPassBtn" class="syncBtn">Reset</button>
-  <button id="logoutBtn" class="syncBtn" style="display:none">Out</button>
-</section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
+  <input id="emailInput" class="emailInput" name="email" type="email" placeholder="email" autocomplete="email">
+  <input id="passwordInput" class="passwordInput" name="password" type="password" placeholder="password" autocomplete="current-password">
+  <button id="signinBtn" class="syncBtn" type="submit">In</button>
+  <button id="signupBtn" class="syncBtn" type="button">New</button>
+  <button id="resetPassBtn" class="syncBtn" type="button">Reset</button>
+  <button id="logoutBtn" class="syncBtn" type="button" style="display:none">Out</button>
+</form><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
 
 (function(){
-const KEY='timeBuckets.v37.collapsed.login';
-const OLD=['timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
+const KEY='timeBuckets.v38.ios.login';
+const OLD=['timeBuckets.v37.collapsed.login','timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
 const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';
 const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
@@ -188,6 +195,76 @@ async function startRealtime(){
     .on('postgres_changes',{event:'*',schema:'public',table:'day_logs'},()=>pullCloud(true))
     .subscribe();
 }
+
+async function doSignIn(){
+  if(!supabaseClient){setStatus('Sync unavailable');return}
+  let email=(document.getElementById('emailInput').value||'').trim();
+  let password=(document.getElementById('passwordInput').value||'');
+  if(!email||!password){setStatus('Enter email + password');return}
+  setStatus('Signing in...');
+  try{
+    let out=await supabaseClient.auth.signInWithPassword({email,password});
+    if(out.error){console.error(out.error);setStatus('Sign in error: '+out.error.message);return}
+    currentUser=out.data.user;
+    accountPanelOpen=false;
+    updateSyncUI();
+    await pullCloud(true);
+    await startRealtime();
+  }catch(err){
+    console.error(err);
+    setStatus('Sign in failed');
+  }
+}
+async function doSignUp(){
+  if(!supabaseClient){setStatus('Sync unavailable');return}
+  let email=(document.getElementById('emailInput').value||'').trim();
+  let password=(document.getElementById('passwordInput').value||'');
+  if(!email||!password){setStatus('Enter email + password');return}
+  if(password.length<6){setStatus('Password needs 6+ chars');return}
+  setStatus('Creating account...');
+  try{
+    let out=await supabaseClient.auth.signUp({email,password,options:{emailRedirectTo:window.location.origin+window.location.pathname}});
+    if(out.error){
+      console.error(out.error);
+      let msg=out.error.message||'account';
+      if(msg.toLowerCase().includes('already'))setStatus('Account exists — sign in or reset');
+      else setStatus('Create error: '+msg);
+      return;
+    }
+    setStatus(out.data&&out.data.session?'Account ready':'Check email to confirm');
+    if(out.data&&out.data.user){
+      currentUser=out.data.user;
+      accountPanelOpen=false;
+      updateSyncUI();
+      await pullCloud(true);
+      await startRealtime();
+    }
+  }catch(err){console.error(err);setStatus('Create failed')}
+}
+async function doResetPassword(){
+  if(!supabaseClient){setStatus('Sync unavailable');return}
+  let email=(document.getElementById('emailInput').value||'').trim();
+  if(!email){setStatus('Enter email first');return}
+  setStatus('Sending reset...');
+  try{
+    let out=await supabaseClient.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+window.location.pathname});
+    if(out.error){console.error(out.error);setStatus('Reset error: '+out.error.message)}
+    else setStatus('Check email for reset');
+  }catch(err){console.error(err);setStatus('Reset failed')}
+}
+function bindTap(el,fn){
+  if(!el)return;
+  let busy=false;
+  async function run(e){
+    if(e){e.preventDefault();e.stopPropagation();}
+    if(busy)return;
+    busy=true;
+    try{await fn()}finally{setTimeout(()=>busy=false,500)}
+  }
+  el.addEventListener('click',run,{passive:false});
+  el.addEventListener('touchend',run,{passive:false});
+}
+
 async function initSync(){
   if(!supabaseClient){setStatus('Sync unavailable');return}
   let sess=await supabaseClient.auth.getSession();currentUser=sess.data&&sess.data.session?sess.data.session.user:null;if(currentUser)accountPanelOpen=false;updateSyncUI();
@@ -209,6 +286,10 @@ async function initSync(){
   if(login)login.onclick=async e=>{e.stopPropagation();let email=(document.getElementById('emailInput').value||'').trim();if(!email){setStatus('Enter email');return}setStatus('Sending link...');let out=await supabaseClient.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.origin+window.location.pathname}});if(out.error){console.error(out.error);setStatus('Login error: '+out.error.message)}else setStatus('Check email')};
   if(logout)logout.onclick=async e=>{e.stopPropagation();if(supabaseClient)await supabaseClient.auth.signOut();currentUser=null;active=null;activeStartedAt=null;updateSyncUI();render()};
   setInterval(()=>{if(currentUser)pullCloud(false)},5000);
+  let signin=document.getElementById('signinBtn'),signup=document.getElementById('signupBtn'),reset=document.getElementById('resetPassBtn'),logout=document.getElementById('logoutBtn'),form=document.getElementById('syncBox');
+  if(form)form.addEventListener('submit',e=>{e.preventDefault();e.stopPropagation();doSignIn()},{passive:false});
+  bindTap(signin,doSignIn);bindTap(signup,doSignUp);bindTap(reset,doResetPassword);
+  if(logout)bindTap(logout,async ()=>{if(supabaseClient)await supabaseClient.auth.signOut();currentUser=null;active=null;activeStartedAt=null;updateSyncUI();render()});
 }
 
 function render(){
