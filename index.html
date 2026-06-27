@@ -17,8 +17,13 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 
-<style id="v36-sync-css">
-.syncBox{display:grid;grid-template-columns:1fr 58px 58px 24px 28px 36px;gap:3px;align-items:center;padding:0 5px 5px}
+
+<style id="v37-sync-css">
+.accountToggle{width:22px;height:22px;border:0;border-radius:8px;background:rgba(255,255,255,.28);color:rgba(17,24,39,.58);font-size:12px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.accountToggle:hover{background:rgba(255,255,255,.44);color:rgba(17,24,39,.78)}
+.accountToggle.signedIn{color:#2563eb;background:rgba(255,255,255,.36)}
+.syncBox{display:grid;grid-template-columns:1fr 58px 58px 24px 28px 36px;gap:3px;align-items:center;padding:0 5px 5px;max-height:40px;opacity:1;transition:max-height .18s ease,opacity .18s ease,padding .18s ease}
+.syncBox.collapsed{max-height:0;opacity:0;overflow:hidden;padding:0 5px}
 .syncBox.signedIn{grid-template-columns:1fr 36px}
 #syncStatus{font-size:9px;font-weight:850;color:rgba(17,24,39,.58);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .emailInput,.passwordInput{height:20px;border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.34);border-radius:7px;padding:2px 5px;font-size:9px;font-weight:750;outline:none;min-width:0}
@@ -26,7 +31,8 @@
 .syncBtn:hover{background:rgba(255,255,255,.42)}
 </style>
 
-</head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><div></div></section><section id="syncBox" class="syncBox">
+
+</head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><button id="accountToggle" class="accountToggle" title="Sync account">☁︎</button></section><section id="syncBox" class="syncBox collapsed">
   <span id="syncStatus">Local only</span>
   <input id="emailInput" class="emailInput" type="email" placeholder="email">
   <input id="passwordInput" class="passwordInput" type="password" placeholder="password">
@@ -37,8 +43,8 @@
 </section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
 
 (function(){
-const KEY='timeBuckets.v36.password.sync';
-const OLD=['timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
+const KEY='timeBuckets.v37.collapsed.login';
+const OLD=['timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
 const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';
 const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
@@ -50,7 +56,7 @@ const defs=[
   {name:'Project 4',elapsed:0,target:30,color:colors[3],notified:false}
 ];
 let state=load(),active=null,typing=false,openColor=null,dragId=null,dropIndex=null,last=Date.now(),historyOpen=false;
-let currentUser=null,cloudTimer=null,realtimeChannel=null,lastPull=0,applyingRemote=false,activeStartedAt=null;
+let currentUser=null,cloudTimer=null,realtimeChannel=null,lastPull=0,applyingRemote=false,activeStartedAt=null,accountPanelOpen=false;
 
 function uuid(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{let r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16)})}
 function isUuid(x){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(x||''))}
@@ -84,6 +90,7 @@ function chime(){try{let C=window.AudioContext||window.webkitAudioContext;if(!C)
 function setStatus(t){let e=document.getElementById('syncStatus');if(e)e.textContent=t}
 function updateSyncUI(){
   let box=document.getElementById('syncBox'),
+      toggle=document.getElementById('accountToggle'),
       email=document.getElementById('emailInput'),
       pass=document.getElementById('passwordInput'),
       signin=document.getElementById('signinBtn'),
@@ -91,6 +98,12 @@ function updateSyncUI(){
       reset=document.getElementById('resetPassBtn'),
       logout=document.getElementById('logoutBtn');
   if(!box)return;
+  box.classList.toggle('collapsed',!accountPanelOpen);
+  if(toggle){
+    toggle.classList.toggle('signedIn',!!currentUser);
+    toggle.textContent=currentUser?'✓':'☁︎';
+    toggle.title=currentUser?'Synced account':'Sync account';
+  }
   if(currentUser){
     box.classList.add('signedIn');
     if(email)email.style.display='none';
@@ -177,7 +190,7 @@ async function startRealtime(){
 }
 async function initSync(){
   if(!supabaseClient){setStatus('Sync unavailable');return}
-  let sess=await supabaseClient.auth.getSession();currentUser=sess.data&&sess.data.session?sess.data.session.user:null;updateSyncUI();
+  let sess=await supabaseClient.auth.getSession();currentUser=sess.data&&sess.data.session?sess.data.session.user:null;if(currentUser)accountPanelOpen=false;updateSyncUI();
   if(currentUser){await pullCloud(true);await startRealtime()}
   supabaseClient.auth.onAuthStateChange(async(evt,session)=>{
     currentUser=session?session.user:null;
@@ -262,6 +275,9 @@ document.onclick=()=>{if(openColor){openColor=null;render()}};
 document.getElementById('add').onclick=e=>{e.stopPropagation();let i=state.buckets.length;state.buckets.push({id:uuid(),cloudId:null,name:'Project '+(i+1),elapsed:0,target:60,color:colors[i%colors.length],notified:false});state.buckets[state.buckets.length-1].cloudId=state.buckets[state.buckets.length-1].id;save();render()};
 document.getElementById('history').onclick=e=>{e.stopPropagation();historyOpen=!historyOpen;document.getElementById('panel').className='panel'+(historyOpen?' open':'');saveDay(state);save();if(historyOpen)drawChart()};
 
+
+let acct=document.getElementById('accountToggle');
+if(acct)acct.onclick=e=>{e.stopPropagation();accountPanelOpen=!accountPanelOpen;updateSyncUI()};
 initSync();render();setInterval(tick,1000);
 })();
 
