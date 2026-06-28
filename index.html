@@ -45,6 +45,16 @@
 .row.remoteActive .text{color:white;text-shadow:0 1px 2px rgba(0,0,0,.28)}
 .accountToggle.remote{color:#7c3aed;background:rgba(255,255,255,.38)}
 </style>
+
+<style id="v43-freeze-overlay-css">
+.app{position:relative}
+.deviceOverlay{display:none;position:absolute;z-index:50;inset:38px 7px 7px;border-radius:15px;background:rgba(255,255,255,.68);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);border:1px solid rgba(255,255,255,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.55),0 8px 26px rgba(31,41,55,.12);align-items:center;justify-content:center;text-align:center;padding:18px;color:rgba(17,24,39,.78);font-weight:900;line-height:1.25;cursor:pointer}
+.deviceOverlay.show{display:flex}
+.deviceOverlay small{display:block;margin-top:8px;font-size:10px;color:rgba(17,24,39,.52);font-weight:850}
+.app.frozen #list,.app.frozen .bottom,.app.frozen #panel{filter:saturate(.65);pointer-events:none}
+.accountToggle.remote{color:#7c3aed;background:rgba(255,255,255,.38)}
+</style>
+
 </head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><button id="accountToggle" class="accountToggle" title="Sync account">☁︎</button></section><section id="syncBox" class="syncBox collapsed">
   <span id="syncStatus">Local only</span>
   <input id="emailInput" class="emailInput" type="email" placeholder="email">
@@ -53,11 +63,11 @@
   <button id="signupBtn" class="syncBtn">New</button>
   <button id="resetPassBtn" class="syncBtn">Reset</button>
   <button id="logoutBtn" class="syncBtn" style="display:none">Out</button>
-</section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
+</section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section><div id="deviceOverlay" class="deviceOverlay"><div>Time Buckets is running on another device.<small>Click to move it here.</small></div></div></main><script>
 
 (function(){
-const KEY='timeBuckets.v42.active.device';
-const OLD=['timeBuckets.v41.field.timestamps','timeBuckets.v40.local.first.sync','timeBuckets.v40.local.first.sync','timeBuckets.v39.frictionless.sync','timeBuckets.v38.iphone.login.fixed','timeBuckets.v37.collapsed.login','timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
+const KEY='timeBuckets.v43.freeze.nondominant';
+const OLD=['timeBuckets.v42.active.device','timeBuckets.v41.field.timestamps','timeBuckets.v40.local.first.sync','timeBuckets.v40.local.first.sync','timeBuckets.v39.frictionless.sync','timeBuckets.v38.iphone.login.fixed','timeBuckets.v37.collapsed.login','timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
 const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';
 const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
@@ -76,6 +86,8 @@ function isUuid(x){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a
 function getDeviceId(){let k='timeBuckets.deviceId',v=localStorage.getItem(k);if(!v){v=uuid();localStorage.setItem(k,v)}return v}
 function isOwner(){return !remoteActive||!remoteActive.active_device_id||remoteActive.active_device_id===deviceId}
 function remoteBucketId(){return remoteActive&&remoteActive.active_bucket_id?remoteActive.active_bucket_id:null}
+function isFrozenByOtherDevice(){return !!(currentUser&&remoteActive&&remoteActive.active_bucket_id&&remoteActive.active_device_id&&remoteActive.active_device_id!==deviceId)}
+function updateFrozenOverlay(){let app=document.querySelector('.app'),ov=document.getElementById('deviceOverlay'),frozen=isFrozenByOtherDevice();if(app)app.classList.toggle('frozen',frozen);if(ov)ov.classList.toggle('show',frozen);let toggle=document.getElementById('accountToggle');if(toggle)toggle.classList.toggle('remote',frozen)}
 function today(){return new Date().toISOString().slice(0,10)}
 function clone(x){return JSON.parse(JSON.stringify(x))}
 function normalizeBucket(b,i){
@@ -174,6 +186,7 @@ function updateSyncUI(){
     if(logout)logout.style.display='none';
     setStatus('Local only');
   }
+  updateFrozenOverlay();
 }
 function fullBucketRow(b,i){
   return {
@@ -228,7 +241,7 @@ async function pushCloud(){
     }
     let ts=await supabaseClient.from('timer_state').upsert(timerRow(),{onConflict:'user_id'});if(ts.error)throw ts.error;
     let dl=await supabaseClient.from('day_logs').upsert({user_id:currentUser.id,date:state.date,bucket_snapshot:state.buckets,updated_at:new Date().toISOString()},{onConflict:'user_id,date'});if(dl.error)throw dl.error;
-    lastCloudWriteAt=Date.now();setStatus('Synced');saveLocal();
+    lastCloudWriteAt=Date.now();setStatus('Synced');saveLocal();updateFrozenOverlay();
   }catch(e){console.error(e);setStatus('Save error: '+(e.message||'cloud'))}
 }
 async function pullCloud(force){
@@ -273,10 +286,10 @@ async function pullCloud(force){
       if(tr.data.active_device_id===deviceId){
         active=tr.data.active_bucket_id;activeStartedAt=tr.data.active_started_at;last=Date.now();syncActiveElapsedFromStart();
       }else{
-        active=null;activeStartedAt=null;last=Date.now();applyRemotePreview();
+        active=null;activeStartedAt=null;last=Date.now();applyRemotePreview();updateFrozenOverlay();
       }
     }else{remoteActive=null;active=null;activeStartedAt=null;last=Date.now()}
-    saveLocal();applyingRemote=false;setStatus('Synced');if(canApplyRemote())render();
+    saveLocal();applyingRemote=false;setStatus('Synced');updateFrozenOverlay();if(canApplyRemote())render();
   }catch(e){applyingRemote=false;console.error(e);setStatus('Load error: '+(e.message||'cloud'))}
 }
 function syncActiveElapsedFromStart(){
@@ -303,23 +316,42 @@ function applyRemotePreview(){
   let val=remotePreviewElapsed();
   if(val!==null && val>b.elapsed)b.elapsed=val;
 }
+
+async function pullCloudForTakeover(){
+  if(!currentUser||!supabaseClient)return;
+  try{
+    let br=await supabaseClient.from('buckets').select('*').order('sort_order',{ascending:true});
+    if(br.error)throw br.error;
+    if(br.data&&br.data.length){
+      let currentById={};state.buckets.forEach(b=>currentById[b.cloudId||b.id]=b);
+      state.buckets=br.data.map((r,i)=>{
+        let old=currentById[r.id]||{};
+        let remoteNameTime=r.name_updated_at||r.updated_at||'', localNameTime=old.nameUpdatedAt||'';
+        let keepLocalName=old.nameDirty || (localNameTime&&remoteNameTime&&new Date(localNameTime)>new Date(remoteNameTime));
+        return {id:r.id,cloudId:r.id,name:keepLocalName?(old.name||r.name):r.name,nameUpdatedAt:keepLocalName?localNameTime:remoteNameTime,nameDirty:!!keepLocalName,color:r.color,target:Math.round((r.target_seconds||3600)/60),elapsed:Number(r.elapsed_seconds)||0,notified:!!r.notified,cloudSaved:true};
+      });
+    }
+    let tr=await supabaseClient.from('timer_state').select('*').maybeSingle();
+    if(tr.error)throw tr.error;
+    remoteActive=tr.data||null;
+    if(remoteActive&&remoteActive.active_bucket_id)applyRemotePreview();
+    saveLocal();
+  }catch(e){console.error(e);setStatus('Takeover sync error')}
+}
+
 async function takeOwnership(startOrStopId){
   if(!currentUser)return;
   markLocalBusy(8000);
-  if(remoteActive && remoteActive.active_device_id!==deviceId)applyRemotePreview();
-  let id=startOrStopId;
+  await pullCloudForTakeover();
+  if(remoteActive&&remoteActive.active_device_id!==deviceId)applyRemotePreview();
+  let id=startOrStopId || (remoteActive&&remoteActive.active_bucket_id);
   let b=state.buckets.find(x=>(x.cloudId||x.id)===id||x.id===id);
   if(!b)return;
-  active=id;
-  activeStartedAt=new Date().toISOString();
+  active=id;activeStartedAt=new Date().toISOString();
   remoteActive={active_bucket_id:id,active_device_id:deviceId,active_started_at:activeStartedAt,base_elapsed_at_start:Number(b.elapsed)||0};
-  last=Date.now();
-  saveLocal();render();await pushCloud();
+  last=Date.now();saveLocal();render();await pushCloud();updateFrozenOverlay();
 }
-function startRemotePreviewLoop(){
-  if(remotePreviewTimer)clearInterval(remotePreviewTimer);
-  remotePreviewTimer=setInterval(()=>{if(remoteActive&&remoteActive.active_device_id!==deviceId){applyRemotePreview();saveLocal();render()}},60000);
-}
+function startRemotePreviewLoop(){return;}
 
 async function startRealtime(){
   // v40: local-first mode. Realtime pulls are intentionally disabled because
@@ -439,7 +471,7 @@ function render(){
     row.ondragstart=e=>{dragId=b.id;e.dataTransfer.setData('text/plain',b.id);row.classList.add('dragging')};
     row.ondragend=()=>{dragId=null;row.classList.remove('dragging');document.querySelectorAll('.dropIndicator').forEach(e=>e.remove());trash.classList.remove('over')};
   });
-  wire();if(historyOpen)drawChart();
+  wire();if(historyOpen)drawChart();updateFrozenOverlay();
 }
 function wire(){
   document.querySelectorAll('.row').forEach(row=>{
@@ -518,6 +550,7 @@ document.getElementById('history').onclick=e=>{e.stopPropagation();historyOpen=!
 
 let acct=document.getElementById('accountToggle');
 if(acct)acct.onclick=e=>{e.stopPropagation();accountPanelOpen=!accountPanelOpen;updateSyncUI()};
+let overlay=document.getElementById('deviceOverlay');if(overlay)overlay.onclick=async e=>{e.preventDefault();e.stopPropagation();await takeOwnership(remoteActive&&remoteActive.active_bucket_id)};
 startRemotePreviewLoop();initSync();render();setInterval(tick,1000);
 })();
 
