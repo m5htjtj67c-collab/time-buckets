@@ -49,8 +49,8 @@
 </section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
 
 (function(){
-const KEY='timeBuckets.v40.local.first.sync';
-const OLD=['timeBuckets.v39.frictionless.sync','timeBuckets.v38.iphone.login.fixed','timeBuckets.v37.collapsed.login','timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
+const KEY='timeBuckets.v41.field.timestamps';
+const OLD=['timeBuckets.v40.local.first.sync','timeBuckets.v39.frictionless.sync','timeBuckets.v38.iphone.login.fixed','timeBuckets.v37.collapsed.login','timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
 const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';
 const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
@@ -70,7 +70,18 @@ function today(){return new Date().toISOString().slice(0,10)}
 function clone(x){return JSON.parse(JSON.stringify(x))}
 function normalizeBucket(b,i){
   let id=isUuid(b.id)?b.id:(isUuid(b.cloud_id)?b.cloud_id:(isUuid(b.cloudId)?b.cloudId:uuid()));
-  return {id:id,cloudId:id,name:b.name||('Project '+(i+1)),elapsed:Number(b.elapsed)||0,target:Number(b.target)||60,color:b.color||colors[i%colors.length],notified:!!b.notified};
+  let now=new Date().toISOString();
+  return {
+    id:id,cloudId:id,
+    name:b.name||('Project '+(i+1)),
+    nameUpdatedAt:b.nameUpdatedAt||b.name_updated_at||b.updated_at||now,
+    nameDirty:!!b.nameDirty,
+    elapsed:Number(b.elapsed)||0,
+    target:Number(b.target)||60,
+    color:b.color||colors[i%colors.length],
+    notified:!!b.notified,
+    cloudSaved:!!b.cloudSaved
+  };
 }
 function load(){
   try{
@@ -109,7 +120,7 @@ function canApplyRemote(){
   if(typing)return false;
   if(active)return false; // never let remote pulls fight an active timer
   if(Date.now()<localBusyUntil)return false;
-  if(Date.now()-lastLocalChangeAt<30000)return false;
+  if(Date.now()-lastLocalChangeAt<120000)return false;
   return true;
 }
 function queueRemotePull(){
@@ -154,11 +165,19 @@ function updateSyncUI(){
     setStatus('Local only');
   }
 }
-function bucketRows(){
-  return state.buckets.map((b,i)=>({
-    id:b.cloudId||b.id,user_id:currentUser.id,name:b.name,color:b.color,target_seconds:Math.round((Number(b.target)||0)*60),
-    elapsed_seconds:Number(b.elapsed)||0,sort_order:i,notified:!!b.notified,updated_at:new Date().toISOString()
-  }));
+function fullBucketRow(b,i){
+  return {
+    id:b.cloudId||b.id,
+    user_id:currentUser.id,
+    name:b.name,
+    name_updated_at:b.nameUpdatedAt||new Date().toISOString(),
+    color:b.color,
+    target_seconds:Math.round((Number(b.target)||0)*60),
+    elapsed_seconds:Number(b.elapsed)||0,
+    sort_order:i,
+    notified:!!b.notified,
+    updated_at:new Date().toISOString()
+  };
 }
 function timerRow(){
   return {user_id:currentUser.id,active_bucket_id:active?active:null,active_started_at:active?activeStartedAt:null,updated_at:new Date().toISOString()};
@@ -167,18 +186,38 @@ function scheduleCloudSave(){if(!currentUser||!supabaseClient)return;clearTimeou
 async function pushCloud(){
   if(!currentUser||!supabaseClient)return;
   try{
-    let rows=bucketRows();
-    if(rows.length){let r=await supabaseClient.from('buckets').upsert(rows,{onConflict:'id'});if(r.error)throw r.error}
+    // v41: field-aware sync.
+    // New/name-dirty buckets get full-row writes. Timer-only saves update only timer fields,
+    // so an older device cannot overwrite a newer title.
+    for(let i=0;i<state.buckets.length;i++){
+      let b=state.buckets[i], id=b.cloudId||b.id;
+      if(!b.cloudSaved || b.nameDirty){
+        let r=await supabaseClient.from('buckets').upsert(fullBucketRow(b,i),{onConflict:'id'});
+        if(r.error)throw r.error;
+        b.cloudSaved=true;
+        b.nameDirty=false;
+      }else{
+        let r=await supabaseClient.from('buckets')
+          .update({
+            elapsed_seconds:Number(b.elapsed)||0,
+            sort_order:i,
+            notified:!!b.notified,
+            updated_at:new Date().toISOString()
+          })
+          .eq('id',id);
+        if(r.error)throw r.error;
+      }
+    }
     let ts=await supabaseClient.from('timer_state').upsert(timerRow(),{onConflict:'user_id'});if(ts.error)throw ts.error;
     let dl=await supabaseClient.from('day_logs').upsert({user_id:currentUser.id,date:state.date,bucket_snapshot:state.buckets,updated_at:new Date().toISOString()},{onConflict:'user_id,date'});if(dl.error)throw dl.error;
-    lastCloudWriteAt=Date.now();setStatus('Synced');
+    lastCloudWriteAt=Date.now();setStatus('Synced');saveLocal();
   }catch(e){console.error(e);setStatus('Save error: '+(e.message||'cloud'))}
 }
 async function pullCloud(force){
   if(!currentUser||!supabaseClient)return;
   // Initial forced pulls after login are allowed only if there has not been a recent local edit.
   if(!force && !canApplyRemote())return;
-  if(force && Date.now()-lastLocalChangeAt<30000)return;
+  if(force && Date.now()-lastLocalChangeAt<120000)return;
   if(!force&&Date.now()-lastPull<60000)return;lastPull=Date.now();
   try{
     let br=await supabaseClient.from('buckets').select('*').order('sort_order',{ascending:true});
@@ -188,7 +227,20 @@ async function pullCloud(force){
       let currentById={};state.buckets.forEach(b=>currentById[b.cloudId||b.id]=b);
       state.buckets=br.data.map((r,i)=>{
         let old=currentById[r.id]||{};
-        return {id:r.id,cloudId:r.id,name:r.name,color:r.color,target:Math.round((r.target_seconds||3600)/60),elapsed:Number(r.elapsed_seconds)||0,notified:!!r.notified};
+        let remoteNameTime=r.name_updated_at||r.updated_at||'';
+        let localNameTime=old.nameUpdatedAt||'';
+        let keepLocalName=old.nameDirty || (localNameTime && remoteNameTime && new Date(localNameTime)>new Date(remoteNameTime));
+        return {
+          id:r.id,cloudId:r.id,
+          name:keepLocalName?(old.name||r.name):r.name,
+          nameUpdatedAt:keepLocalName?localNameTime:remoteNameTime,
+          nameDirty:!!keepLocalName,
+          color:r.color,
+          target:Math.round((r.target_seconds||3600)/60),
+          elapsed:Number(r.elapsed_seconds)||0,
+          notified:!!r.notified,
+          cloudSaved:true
+        };
       });
     }else{
       applyingRemote=false;await pushCloud();applyingRemote=true;
@@ -338,7 +390,14 @@ function wire(){
     row.querySelector('.popup').onclick=e=>e.stopPropagation();
     row.querySelector('.close').onclick=e=>{e.stopPropagation();openColor=null;render()};
     row.querySelectorAll('.swatch').forEach(s=>s.onclick=e=>{b.color=s.dataset.c;save();render()});
-    let name=row.querySelector('.name');name.onfocus=()=>{typing=true;markLocalBusy(12000)};name.oninput=()=>{markLocalBusy(12000);b.name=name.value||'Untitled';save()};name.onblur=()=>{typing=false;markLocalBusy(12000);save();render()};
+    let name=row.querySelector('.name');name.onfocus=()=>{typing=true;markLocalBusy(12000)};name.oninput=()=>{
+      markLocalBusy(12000);
+      b.name=name.value||'Untitled';
+      b.nameUpdatedAt=new Date().toISOString();
+      b.nameDirty=true;
+      save();
+    };
+    name.onblur=()=>{typing=false;markLocalBusy(12000);b.nameUpdatedAt=new Date().toISOString();b.nameDirty=true;save();render()};
     let target=row.querySelector('.target');target.onfocus=()=>{typing=true;markLocalBusy(12000);target.value=String(b.target);target.select()};target.onblur=()=>{markLocalBusy(12000);b.target=parseN(target.value,b.target);b.notified=b.elapsed>=b.target*60;typing=false;save();render()};target.onkeydown=e=>{if(e.key==='Enter')target.blur()};
     row.querySelector('.bar').onclick=()=>{
       markLocalBusy(8000);
@@ -384,7 +443,7 @@ function drawChart(){
   ctx.textAlign='start';
 }
 document.onclick=()=>{if(openColor){openColor=null;render()}};
-document.getElementById('add').onclick=e=>{e.stopPropagation();markLocalBusy(8000);let i=state.buckets.length;state.buckets.push({id:uuid(),cloudId:null,name:'Project '+(i+1),elapsed:0,target:60,color:colors[i%colors.length],notified:false});state.buckets[state.buckets.length-1].cloudId=state.buckets[state.buckets.length-1].id;save();render()};
+document.getElementById('add').onclick=e=>{e.stopPropagation();markLocalBusy(8000);let i=state.buckets.length;let newId=uuid();state.buckets.push({id:newId,cloudId:newId,name:'Project '+(i+1),nameUpdatedAt:new Date().toISOString(),nameDirty:true,elapsed:0,target:60,color:colors[i%colors.length],notified:false,cloudSaved:false});save();render()};
 document.getElementById('history').onclick=e=>{e.stopPropagation();historyOpen=!historyOpen;document.getElementById('panel').className='panel'+(historyOpen?' open':'');saveDay(state);save();if(historyOpen)drawChart()};
 
 
