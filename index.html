@@ -38,6 +38,13 @@
 .syncBtn{min-width:28px}
 .emailInput,.passwordInput{font-size:16px;line-height:20px}
 </style>
+
+<style id="v42-active-device-css">
+.row.remoteActive{outline:1px solid rgba(37,99,235,.22);background:rgba(255,255,255,.44)}
+.row.remoteActive .fill{animation:none!important;filter:saturate(.85)}
+.row.remoteActive .text{color:white;text-shadow:0 1px 2px rgba(0,0,0,.28)}
+.accountToggle.remote{color:#7c3aed;background:rgba(255,255,255,.38)}
+</style>
 </head><body><main class="app"><section class="header"><div class="traffic"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div><h1>Time Buckets</h1><button id="accountToggle" class="accountToggle" title="Sync account">☁︎</button></section><section id="syncBox" class="syncBox collapsed">
   <span id="syncStatus">Local only</span>
   <input id="emailInput" class="emailInput" type="email" placeholder="email">
@@ -49,8 +56,8 @@
 </section><section id="list"></section><section class="bottom"><div id="trash" class="trash">🗑</div><button id="add" class="add">+</button><button id="history" class="historyBtn">History</button></section><section id="panel" class="panel"><h2>History</h2><div class="chartWrap"><canvas id="chart" width="820" height="220"></canvas></div></section></main><script>
 
 (function(){
-const KEY='timeBuckets.v41.field.timestamps';
-const OLD=['timeBuckets.v40.local.first.sync','timeBuckets.v39.frictionless.sync','timeBuckets.v38.iphone.login.fixed','timeBuckets.v37.collapsed.login','timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
+const KEY='timeBuckets.v42.active.device';
+const OLD=['timeBuckets.v41.field.timestamps','timeBuckets.v40.local.first.sync','timeBuckets.v40.local.first.sync','timeBuckets.v39.frictionless.sync','timeBuckets.v38.iphone.login.fixed','timeBuckets.v37.collapsed.login','timeBuckets.v36.password.sync','timeBuckets.v35.sync','timeBuckets.v34.sync','timeBuckets.v33','timeBuckets.v32','timeBuckets.glass.compact.v28','timeBuckets.glass.compact.v25','timeBuckets.glass.v24','timeBuckets.v23'];
 const SUPABASE_URL='https://kueijuohihlwaustotbm.supabase.co';
 const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1ZWlqdW9oaWhsd2F1c3RvdGJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MjgxOTQsImV4cCI6MjA5NzQwNDE5NH0.ltzf8oe9t2QhngD8mym3JIiV2a-AcV7C1ZEyFwfyJig';
 const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
@@ -62,10 +69,13 @@ const defs=[
   {name:'Project 4',elapsed:0,target:30,color:colors[3],notified:false}
 ];
 let state=load(),active=null,typing=false,openColor=null,dragId=null,dropIndex=null,last=Date.now(),historyOpen=false;
-let currentUser=null,cloudTimer=null,realtimeChannel=null,lastPull=0,applyingRemote=false,activeStartedAt=null,accountPanelOpen=false,localBusyUntil=0,remoteQueued=false,realtimeTimer=null,lastStatus='',lastLocalChangeAt=0,lastCloudWriteAt=0;
+let currentUser=null,cloudTimer=null,realtimeChannel=null,lastPull=0,applyingRemote=false,activeStartedAt=null,accountPanelOpen=false,localBusyUntil=0,remoteQueued=false,realtimeTimer=null,lastStatus='',lastLocalChangeAt=0,lastCloudWriteAt=0,deviceId=getDeviceId(),remoteActive=null,remotePreviewTimer=null;
 
 function uuid(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{let r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16)})}
 function isUuid(x){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(x||''))}
+function getDeviceId(){let k='timeBuckets.deviceId',v=localStorage.getItem(k);if(!v){v=uuid();localStorage.setItem(k,v)}return v}
+function isOwner(){return !remoteActive||!remoteActive.active_device_id||remoteActive.active_device_id===deviceId}
+function remoteBucketId(){return remoteActive&&remoteActive.active_bucket_id?remoteActive.active_bucket_id:null}
 function today(){return new Date().toISOString().slice(0,10)}
 function clone(x){return JSON.parse(JSON.stringify(x))}
 function normalizeBucket(b,i){
@@ -141,7 +151,7 @@ function updateSyncUI(){
   if(!box)return;
   box.classList.toggle('collapsed',!accountPanelOpen);
   if(toggle){
-    toggle.classList.toggle('signedIn',!!currentUser);
+    toggle.classList.toggle('signedIn',!!currentUser);toggle.classList.toggle('remote',!!(remoteActive&&remoteActive.active_device_id&&remoteActive.active_device_id!==deviceId));
     toggle.textContent=currentUser?'✓':'☁︎';
     toggle.title=currentUser?'Synced account':'Sync account';
   }
@@ -180,7 +190,15 @@ function fullBucketRow(b,i){
   };
 }
 function timerRow(){
-  return {user_id:currentUser.id,active_bucket_id:active?active:null,active_started_at:active?activeStartedAt:null,updated_at:new Date().toISOString()};
+  let b=active?state.buckets.find(x=>(x.cloudId||x.id)===active||x.id===active):null;
+  return {
+    user_id:currentUser.id,
+    active_bucket_id:active?active:null,
+    active_device_id:active?deviceId:null,
+    active_started_at:active?activeStartedAt:null,
+    base_elapsed_at_start:b?(Number(b.elapsed)||0):0,
+    updated_at:new Date().toISOString()
+  };
 }
 function scheduleCloudSave(){if(!currentUser||!supabaseClient)return;clearTimeout(cloudTimer);cloudTimer=setTimeout(pushCloud,900)}
 async function pushCloud(){
@@ -250,19 +268,59 @@ async function pullCloud(force){
     if(lr.data)state.history=lr.data.filter(x=>x.date!==state.date).map(x=>({date:x.date,buckets:x.bucket_snapshot||[]}));
     let tr=await supabaseClient.from('timer_state').select('*').maybeSingle();
     if(tr.error)throw tr.error;
-    if(tr.data&&tr.data.active_bucket_id){active=tr.data.active_bucket_id;activeStartedAt=tr.data.active_started_at;last=Date.now();syncActiveElapsedFromStart()}
-    else{active=null;activeStartedAt=null;last=Date.now()}
+    if(tr.data&&tr.data.active_bucket_id){
+      remoteActive=tr.data;
+      if(tr.data.active_device_id===deviceId){
+        active=tr.data.active_bucket_id;activeStartedAt=tr.data.active_started_at;last=Date.now();syncActiveElapsedFromStart();
+      }else{
+        active=null;activeStartedAt=null;last=Date.now();applyRemotePreview();
+      }
+    }else{remoteActive=null;active=null;activeStartedAt=null;last=Date.now()}
     saveLocal();applyingRemote=false;setStatus('Synced');if(canApplyRemote())render();
   }catch(e){applyingRemote=false;console.error(e);setStatus('Load error: '+(e.message||'cloud'))}
 }
 function syncActiveElapsedFromStart(){
   if(!active||!activeStartedAt)return;
   let b=state.buckets.find(x=>(x.cloudId||x.id)===active||x.id===active);if(!b)return;
-  // elapsed in bucket is treated as the base elapsed at the moment the active timer was started.
-  // Add wall-clock time since activeStartedAt when rendering/ticking on another device.
   let started=new Date(activeStartedAt).getTime();
-  if(!isNaN(started)){let base=Number(b.elapsed)||0;let nowElapsed=base+(Date.now()-started)/1000;if(nowElapsed>b.elapsed)b.elapsed=nowElapsed}
+  if(!isNaN(started)){
+    let base=remoteActive&&remoteActive.active_bucket_id===active?Number(remoteActive.base_elapsed_at_start)||Number(b.elapsed)||0:Number(b.elapsed)||0;
+    b.elapsed=base+(Date.now()-started)/1000;
+  }
 }
+
+function remotePreviewElapsed(){
+  if(!remoteActive||!remoteActive.active_bucket_id)return null;
+  let base=Number(remoteActive.base_elapsed_at_start)||0;
+  let started=remoteActive.active_started_at?new Date(remoteActive.active_started_at).getTime():Date.now();
+  if(isNaN(started))return base;
+  return base+(Date.now()-started)/1000;
+}
+function applyRemotePreview(){
+  if(!remoteActive||remoteActive.active_device_id===deviceId)return;
+  let id=remoteActive.active_bucket_id, b=state.buckets.find(x=>(x.cloudId||x.id)===id||x.id===id);
+  if(!b)return;
+  let val=remotePreviewElapsed();
+  if(val!==null && val>b.elapsed)b.elapsed=val;
+}
+async function takeOwnership(startOrStopId){
+  if(!currentUser)return;
+  markLocalBusy(8000);
+  if(remoteActive && remoteActive.active_device_id!==deviceId)applyRemotePreview();
+  let id=startOrStopId;
+  let b=state.buckets.find(x=>(x.cloudId||x.id)===id||x.id===id);
+  if(!b)return;
+  active=id;
+  activeStartedAt=new Date().toISOString();
+  remoteActive={active_bucket_id:id,active_device_id:deviceId,active_started_at:activeStartedAt,base_elapsed_at_start:Number(b.elapsed)||0};
+  last=Date.now();
+  saveLocal();render();await pushCloud();
+}
+function startRemotePreviewLoop(){
+  if(remotePreviewTimer)clearInterval(remotePreviewTimer);
+  remotePreviewTimer=setInterval(()=>{if(remoteActive&&remoteActive.active_device_id!==deviceId){applyRemotePreview();saveLocal();render()}},60000);
+}
+
 async function startRealtime(){
   // v40: local-first mode. Realtime pulls are intentionally disabled because
   // they can interrupt editing/clicking. Sync still happens by pushing local
@@ -373,10 +431,10 @@ function render(){
   document.querySelectorAll('.dropIndicator').forEach(e=>e.remove());
   let list=document.getElementById('list');list.innerHTML='';
   state.buckets.forEach((b,i)=>{
-    let pct=Math.min(b.elapsed/(b.target*60),1)*100,run=active===(b.cloudId||b.id)||active===b.id,full=b.elapsed>=b.target*60;
+    let idForRow=b.cloudId||b.id,remoteRun=remoteActive&&remoteActive.active_device_id!==deviceId&&remoteActive.active_bucket_id===idForRow, pct=Math.min(b.elapsed/(b.target*60),1)*100,run=active===idForRow||active===b.id,full=b.elapsed>=b.target*60;
     let sw=colors.map(c=>`<span class="swatch" data-c="${c}" style="background:${c}"></span>`).join('');
-    let row=document.createElement('section');row.className='row'+(run?' running':'')+(full?' full':'');row.draggable=true;row.dataset.id=b.id;row.style.setProperty('--bar-color',b.color);row.style.setProperty('--bar-bg',rgb(b.color,.24));
-    row.innerHTML=`<div class="handle">⋮</div><div class="colorWrap"><div class="colorDot" style="background:${b.color}"></div><div class="popup ${openColor===b.id?'open':''}"><div class="popTop"><span>Color</span><span class="close">×</span></div><div class="swatches">${sw}</div></div></div><input class="name" value="${esc(b.name)}"><div class="bar"><div class="fill" style="width:${pct}%"></div><div class="text">${full?extra(b):(run?fmt(b.elapsed):'')}</div></div><input class="target" value="${b.target}m" inputmode="numeric"><button class="btn reset">↺</button><button class="btn plus">+5</button>`;
+    let row=document.createElement('section');row.className='row'+(run?' running':'')+(remoteRun?' remoteActive':'')+(full?' full':'');row.draggable=true;row.dataset.id=b.id;row.style.setProperty('--bar-color',b.color);row.style.setProperty('--bar-bg',rgb(b.color,.24));
+    row.innerHTML=`<div class="handle">⋮</div><div class="colorWrap"><div class="colorDot" style="background:${b.color}"></div><div class="popup ${openColor===b.id?'open':''}"><div class="popTop"><span>Color</span><span class="close">×</span></div><div class="swatches">${sw}</div></div></div><input class="name" value="${esc(b.name)}"><div class="bar"><div class="fill" style="width:${pct}%"></div><div class="text">${full?extra(b):((run||remoteRun)?fmt(b.elapsed):'')}</div></div><input class="target" value="${b.target}m" inputmode="numeric"><button class="btn reset">↺</button><button class="btn plus">+5</button>`;
     list.appendChild(row);
     row.ondragstart=e=>{dragId=b.id;e.dataTransfer.setData('text/plain',b.id);row.classList.add('dragging')};
     row.ondragend=()=>{dragId=null;row.classList.remove('dragging');document.querySelectorAll('.dropIndicator').forEach(e=>e.remove());trash.classList.remove('over')};
@@ -399,15 +457,26 @@ function wire(){
     };
     name.onblur=()=>{typing=false;markLocalBusy(12000);b.nameUpdatedAt=new Date().toISOString();b.nameDirty=true;save();render()};
     let target=row.querySelector('.target');target.onfocus=()=>{typing=true;markLocalBusy(12000);target.value=String(b.target);target.select()};target.onblur=()=>{markLocalBusy(12000);b.target=parseN(target.value,b.target);b.notified=b.elapsed>=b.target*60;typing=false;save();render()};target.onkeydown=e=>{if(e.key==='Enter')target.blur()};
-    row.querySelector('.bar').onclick=()=>{
+    row.querySelector('.bar').onclick=async ()=>{
       markLocalBusy(8000);
       let id=b.cloudId||b.id;
-      if(active===id){active=null;activeStartedAt=null;last=Date.now();}
-      else{active=id;activeStartedAt=new Date().toISOString();last=Date.now();}
+      if(remoteActive && remoteActive.active_device_id!==deviceId){
+        applyRemotePreview();
+        if(remoteActive.active_bucket_id===id){
+          // first tap on non-owner takes over and stops the remote-running timer
+          active=null;activeStartedAt=null;remoteActive=null;last=Date.now();
+        }else{
+          await takeOwnership(id);return;
+        }
+      }else if(active===id){
+        active=null;activeStartedAt=null;remoteActive=null;last=Date.now();
+      }else{
+        active=id;activeStartedAt=new Date().toISOString();remoteActive={active_bucket_id:id,active_device_id:deviceId,active_started_at:activeStartedAt,base_elapsed_at_start:Number(b.elapsed)||0};last=Date.now();
+      }
       saveLocal();render();scheduleCloudSave();
     };
-    row.querySelector('.reset').onclick=()=>{markLocalBusy(8000);b.elapsed=0;b.notified=false;if(active===(b.cloudId||b.id)){active=null;activeStartedAt=null}save();render()};
-    row.querySelector('.plus').onclick=()=>{markLocalBusy(8000);let before=b.elapsed,t=b.target*60;if(before<t&&before+300>=t){b.elapsed=t;if(!b.notified){b.notified=true;chime()}}else{b.elapsed+=300;if(b.elapsed>=t&&!b.notified){b.notified=true;chime()}}if(active===(b.cloudId||b.id)&&b.notified){active=null;activeStartedAt=null}save();render()};
+    row.querySelector('.reset').onclick=()=>{markLocalBusy(8000);if(remoteActive&&remoteActive.active_device_id!==deviceId){remoteActive=null;active=null;activeStartedAt=null;}b.elapsed=0;b.notified=false;if(active===(b.cloudId||b.id)){active=null;activeStartedAt=null}save();render()};
+    row.querySelector('.plus').onclick=()=>{markLocalBusy(8000);if(remoteActive&&remoteActive.active_device_id!==deviceId){applyRemotePreview();remoteActive=null;active=null;activeStartedAt=null;}let before=b.elapsed,t=b.target*60;if(before<t&&before+300>=t){b.elapsed=t;if(!b.notified){b.notified=true;chime()}}else{b.elapsed+=300;if(b.elapsed>=t&&!b.notified){b.notified=true;chime()}}if(active===(b.cloudId||b.id)&&b.notified){active=null;activeStartedAt=null}save();render()};
   });
 }
 function indexFromY(y){let rows=[...document.querySelectorAll('.row')];for(let i=0;i<rows.length;i++){let r=rows[i].getBoundingClientRect();if(y<r.top+r.height/2)return i}return rows.length}
@@ -422,7 +491,7 @@ trash.ondrop=e=>{e.preventDefault();markLocalBusy(8000);let b=state.buckets.find
 function tick(){
   let now=Date.now(),d=(now-last)/1000;last=now;
   if(today()!==state.date){saveDay(state);state.date=today();state.buckets.forEach(b=>{b.elapsed=0;b.notified=false});active=null;activeStartedAt=null;save();render();return}
-  if(!active)return;
+  if(!active|| (remoteActive && remoteActive.active_device_id && remoteActive.active_device_id!==deviceId))return;
   let b=state.buckets.find(x=>(x.cloudId||x.id)===active||x.id===active);if(!b)return;
   b.elapsed+=d;
   if(b.elapsed>=b.target*60&&!b.notified){b.notified=true;chime()}
@@ -449,7 +518,7 @@ document.getElementById('history').onclick=e=>{e.stopPropagation();historyOpen=!
 
 let acct=document.getElementById('accountToggle');
 if(acct)acct.onclick=e=>{e.stopPropagation();accountPanelOpen=!accountPanelOpen;updateSyncUI()};
-initSync();render();setInterval(tick,1000);
+startRemotePreviewLoop();initSync();render();setInterval(tick,1000);
 })();
 
 </script></body></html>
